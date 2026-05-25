@@ -1,168 +1,165 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useStore } from '../store/useStore';
+import { useStore, type PageSection, type WebsiteContent } from '../store/useStore';
 import EditorSidebar from '../components/editor/EditorSidebar';
 import EditorCanvas from '../components/editor/EditorCanvas';
-import { Menu, X, Monitor, Smartphone, Tablet, Save, Undo, Redo, Eye } from 'lucide-react';
+import { Menu, X, Monitor, Smartphone, Tablet, Save, Eye, ChevronLeft } from 'lucide-react';
 
-export type EditorTab = 'elements' | 'style' | 'content' | 'settings';
+export type EditorTab = 'sections' | 'style' | 'content' | 'settings';
 export type DeviceView = 'desktop' | 'tablet' | 'mobile';
 
 export default function EditorPage() {
   const { projectId } = useParams();
   const navigate = useNavigate();
-  const { projects } = useStore();
-  const [activeTab, setActiveTab] = useState<EditorTab>('elements');
+  const { projects, updateProject } = useStore();
+  const [activeTab, setActiveTab] = useState<EditorTab>('sections');
   const [deviceView, setDeviceView] = useState<DeviceView>('desktop');
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [selectedElement, setSelectedElement] = useState<string | null>(null);
-  const [history, setHistory] = useState<any[]>([]);
-  const [historyIndex, setHistoryIndex] = useState(-1);
+  const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
+  const [showSavedToast, setShowSavedToast] = useState(false);
 
-  // Website content state
-  const [websiteContent, setWebsiteContent] = useState({
-    businessName: 'Elite Auto Repair',
-    tagline: 'Premium Auto Care You Can Trust',
-    description: 'Full-service auto repair shop specializing in domestic and foreign vehicles. From oil changes to engine rebuilds, our certified technicians have you covered.',
-    phone: '(512) 555-0142',
-    email: 'service@eliteauto.com',
-    address: '123 Main Street, Austin, TX 78701',
-    hours: 'Mon-Fri: 8AM-6PM | Sat: 9AM-4PM',
-    primaryColor: '#6b46c1',
-    secondaryColor: '#2563eb',
-    fontFamily: 'Inter',
-  });
+  const project = useMemo(() => {
+    return projects.find((p) => p.id === projectId) || null;
+  }, [projects, projectId]);
 
-  const project = projects.find((p) => p.id === projectId) || {
-    id: 'demo',
-    name: 'Demo Project',
-    industry: 'Auto Repair Shop',
-    status: 'ready' as const,
+  const content: WebsiteContent = useMemo(() => {
+    return project?.content || {
+      businessName: 'Your Business',
+      tagline: 'Your Tagline Here',
+      description: 'Your business description.',
+      services: ['Service 1', 'Service 2', 'Service 3'],
+      phone: '(555) 000-0000',
+      email: 'contact@example.com',
+      address: '123 Main St',
+      hours: 'Mon-Fri 9AM-5PM',
+      rating: '4.8',
+      reviewCount: '150',
+      primaryColor: '#6b46c1',
+      secondaryColor: '#2563eb',
+      accentColor: '#a78bfa',
+      fontFamily: 'Inter',
+      rawText: '',
+    };
+  }, [project]);
+
+  const sections: PageSection[] = useMemo(() => {
+    return project?.sections || [];
+  }, [project]);
+
+  const updateContent = (field: string, value: string) => {
+    if (!project) return;
+    const newContent = { ...content, [field]: value };
+    updateProject(project.id, { content: newContent });
+    showToast();
   };
 
-  const handleContentChange = (field: string, value: string) => {
-    setWebsiteContent((prev) => {
-      const next = { ...prev, [field]: value };
-      // Add to history
-      setHistory((h) => [...h.slice(0, historyIndex + 1), next]);
-      setHistoryIndex((i) => i + 1);
-      return next;
-    });
+  const updateSections = (newSections: PageSection[]) => {
+    if (!project) return;
+    updateProject(project.id, { sections: newSections });
+    showToast();
   };
 
-  const handleUndo = () => {
-    if (historyIndex > 0) {
-      setHistoryIndex(historyIndex - 1);
-      setWebsiteContent(history[historyIndex - 1]);
-    }
+  const toggleSection = (sectionId: string) => {
+    const newSections = sections.map((s) =>
+      s.id === sectionId ? { ...s, enabled: !s.enabled } : s
+    );
+    updateSections(newSections);
   };
 
-  const handleRedo = () => {
-    if (historyIndex < history.length - 1) {
-      setHistoryIndex(historyIndex + 1);
-      setWebsiteContent(history[historyIndex + 1]);
-    }
+  const moveSection = (sectionId: string, direction: 'up' | 'down') => {
+    const idx = sections.findIndex((s) => s.id === sectionId);
+    if (idx < 0) return;
+    if (direction === 'up' && idx === 0) return;
+    if (direction === 'down' && idx === sections.length - 1) return;
+    const newSections = [...sections];
+    const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+    [newSections[idx], newSections[swapIdx]] = [newSections[swapIdx], newSections[idx]];
+    newSections.forEach((s, i) => { s.order = i; });
+    updateSections(newSections);
   };
+
+  const showToast = () => {
+    setShowSavedToast(true);
+    setTimeout(() => setShowSavedToast(false), 1500);
+  };
+
+  if (!project) {
+    return (
+      <div className="h-screen flex items-center justify-center" style={{ background: '#000' }}>
+        <div className="text-center">
+          <p className="text-white/40 mb-4">Project not found</p>
+          <button onClick={() => navigate('/dashboard')} className="text-violet-400 hover:text-violet-300 text-sm">
+            Back to Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-screen flex flex-col" style={{ background: '#000000' }}>
       {/* Top Toolbar */}
       <div className="flex items-center justify-between h-14 px-4 border-b border-white/5" style={{ background: '#111111' }}>
-        {/* Left */}
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="p-2 rounded-lg text-white/40 hover:text-white hover:bg-white/5 transition-all"
-          >
+        <div className="flex items-center gap-3">
+          <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-2 rounded-lg text-white/40 hover:text-white hover:bg-white/5 transition-all">
             {sidebarOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
           </button>
           <div className="h-5 w-px bg-white/10" />
+          <button onClick={() => navigate('/dashboard')} className="flex items-center gap-1.5 text-white/40 hover:text-white transition-all">
+            <ChevronLeft className="w-4 h-4" />
+          </button>
           <span className="text-sm font-medium text-white truncate max-w-[150px]">{project.name}</span>
-          <span className="text-xs text-white/30 px-2 py-0.5 rounded bg-white/5">{project.industry}</span>
+          <span className="text-[10px] text-white/30 px-1.5 py-0.5 rounded bg-white/5">{project.industry}</span>
         </div>
 
-        {/* Center - Device Switcher */}
         <div className="hidden sm:flex items-center gap-1 p-1 rounded-lg bg-white/5">
-          <button
-            onClick={() => setDeviceView('desktop')}
-            className={`p-1.5 rounded-md transition-all ${deviceView === 'desktop' ? 'bg-white/10 text-white' : 'text-white/30 hover:text-white/60'}`}
-          >
-            <Monitor className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => setDeviceView('tablet')}
-            className={`p-1.5 rounded-md transition-all ${deviceView === 'tablet' ? 'bg-white/10 text-white' : 'text-white/30 hover:text-white/60'}`}
-          >
-            <Tablet className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => setDeviceView('mobile')}
-            className={`p-1.5 rounded-md transition-all ${deviceView === 'mobile' ? 'bg-white/10 text-white' : 'text-white/30 hover:text-white/60'}`}
-          >
-            <Smartphone className="w-4 h-4" />
-          </button>
+          {(['desktop', 'tablet', 'mobile'] as DeviceView[]).map((d) => (
+            <button key={d} onClick={() => setDeviceView(d)}
+              className={`p-1.5 rounded-md transition-all ${deviceView === d ? 'bg-white/10 text-white' : 'text-white/30 hover:text-white/60'}`}>
+              {d === 'desktop' ? <Monitor className="w-4 h-4" /> : d === 'tablet' ? <Tablet className="w-4 h-4" /> : <Smartphone className="w-4 h-4" />}
+            </button>
+          ))}
         </div>
 
-        {/* Right */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleUndo}
-            className="p-2 rounded-lg text-white/40 hover:text-white hover:bg-white/5 transition-all"
-            title="Undo"
-          >
-            <Undo className="w-4 h-4" />
+        <div className="flex items-center gap-2 relative">
+          {showSavedToast && (
+            <div className="absolute -top-8 right-0 flex items-center gap-1 px-2 py-1 rounded bg-green-500/20 text-green-400 text-xs">
+              <Save className="w-3 h-3" /> Saved
+            </div>
+          )}
+          <button onClick={() => navigate('/dashboard')} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white/40 hover:text-white transition-all">
+            Done
           </button>
-          <button
-            onClick={handleRedo}
-            className="p-2 rounded-lg text-white/40 hover:text-white hover:bg-white/5 transition-all"
-            title="Redo"
-          >
-            <Redo className="w-4 h-4" />
-          </button>
-          <div className="h-5 w-px bg-white/10 mx-1" />
-          <button
-            onClick={() => alert('Preview saved!')}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white/60 hover:text-white hover:bg-white/5 transition-all"
-          >
-            <Save className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Save</span>
-          </button>
-          <button
-            onClick={() => alert('Opening preview...')}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white transition-all hover:shadow-lg hover:shadow-violet-500/25"
-            style={{ background: 'linear-gradient(135deg, #6b46c1 0%, #2563eb 100%)' }}
-          >
+          <button onClick={() => window.open(`#/preview/${project.id}`, '_blank')}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white transition-all hover:shadow-lg"
+            style={{ background: 'linear-gradient(135deg, #6b46c1 0%, #2563eb 100%)' }}>
             <Eye className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Preview</span>
-          </button>
-          <button
-            onClick={() => navigate('/dashboard')}
-            className="ml-2 px-3 py-1.5 rounded-lg text-xs font-medium text-white/40 hover:text-white transition-all"
-          >
-            Exit
           </button>
         </div>
       </div>
 
-      {/* Main Area */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Sidebar */}
         {sidebarOpen && (
           <EditorSidebar
             activeTab={activeTab}
             onTabChange={setActiveTab}
-            websiteContent={websiteContent}
-            onContentChange={handleContentChange}
-            selectedElement={selectedElement}
+            content={content}
+            onContentChange={updateContent}
+            sections={sections}
+            selectedSectionId={selectedSectionId}
+            onSelectSection={setSelectedSectionId}
+            onToggleSection={toggleSection}
+            onMoveSection={moveSection}
+            onUpdateSections={updateSections}
           />
         )}
-
-        {/* Canvas */}
         <EditorCanvas
           deviceView={deviceView}
-          websiteContent={websiteContent}
-          selectedElement={selectedElement}
-          onSelectElement={setSelectedElement}
+          content={content}
+          sections={sections}
+          selectedSectionId={selectedSectionId}
+          onSelectSection={setSelectedSectionId}
         />
       </div>
     </div>

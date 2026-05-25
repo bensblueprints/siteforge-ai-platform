@@ -7,8 +7,8 @@ interface ProjectCardProps {
     industry: string;
     status: 'draft' | 'generating' | 'ready' | 'published';
     url?: string;
-    createdAt: Date;
-    updatedAt: Date;
+    createdAt: string | Date;
+    updatedAt: string | Date;
     preview?: string;
   };
   onEdit: () => void;
