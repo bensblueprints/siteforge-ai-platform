@@ -1,9 +1,9 @@
 import { useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useStore, type PageSection, type WebsiteContent } from '../store/useStore';
-import EditorSidebar from '../components/editor/EditorSidebar';
-import EditorCanvas from '../components/editor/EditorCanvas';
-import { Menu, X, Monitor, Smartphone, Tablet, Save, Eye, ChevronLeft } from 'lucide-react';
+import { trpc } from '@/providers/trpc';
+import EditorSidebar from '@/components/editor/EditorSidebar';
+import EditorCanvas from '@/components/editor/EditorCanvas';
+import { Menu, X, Monitor, Smartphone, Tablet, Save, Eye, ChevronLeft, Loader2 } from 'lucide-react';
 
 export type EditorTab = 'sections' | 'style' | 'content' | 'settings';
 export type DeviceView = 'desktop' | 'tablet' | 'mobile';
@@ -11,52 +11,80 @@ export type DeviceView = 'desktop' | 'tablet' | 'mobile';
 export default function EditorPage() {
   const { projectId } = useParams();
   const navigate = useNavigate();
-  const { projects, updateProject } = useStore();
+  const utils = trpc.useUtils();
+  const id = parseInt(projectId || '0', 10);
+
+  const { data: project, isLoading } = trpc.scrape.getProject.useQuery(
+    { id },
+    { enabled: id > 0 }
+  );
+  const updateMutation = trpc.scrape.updateProject.useMutation({
+    onSuccess: () => {
+      utils.scrape.getProject.invalidate({ id });
+      setShowSavedToast(true);
+      setTimeout(() => setShowSavedToast(false), 1500);
+    },
+  });
+
   const [activeTab, setActiveTab] = useState<EditorTab>('sections');
   const [deviceView, setDeviceView] = useState<DeviceView>('desktop');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
   const [showSavedToast, setShowSavedToast] = useState(false);
 
-  const project = useMemo(() => {
-    return projects.find((p) => p.id === projectId) || null;
-  }, [projects, projectId]);
+  const content = useMemo(() => ({
+    businessName: project?.businessName || 'Your Business',
+    tagline: project?.tagline || 'Your Tagline',
+    description: project?.description || 'Your description.',
+    services: Array.isArray(project?.services) ? project?.services as string[] : ['Service 1', 'Service 2', 'Service 3'],
+    phone: project?.phone || '(555) 000-0000',
+    email: project?.email || '',
+    address: project?.address || '',
+    hours: project?.hours || 'Mon-Fri 9AM-5PM',
+    rating: project?.rating || '4.8',
+    reviewCount: project?.reviewCount || '150',
+    primaryColor: project?.primaryColor || '#6b46c1',
+    secondaryColor: project?.secondaryColor || '#2563eb',
+    accentColor: project?.accentColor || '#a78bfa',
+    fontFamily: project?.fontFamily || 'Inter',
+    rawText: project?.rawText || '',
+  }), [project]);
 
-  const content: WebsiteContent = useMemo(() => {
-    return project?.content || {
-      businessName: 'Your Business',
-      tagline: 'Your Tagline Here',
-      description: 'Your business description.',
-      services: ['Service 1', 'Service 2', 'Service 3'],
-      phone: '(555) 000-0000',
-      email: 'contact@example.com',
-      address: '123 Main St',
-      hours: 'Mon-Fri 9AM-5PM',
-      rating: '4.8',
-      reviewCount: '150',
-      primaryColor: '#6b46c1',
-      secondaryColor: '#2563eb',
-      accentColor: '#a78bfa',
-      fontFamily: 'Inter',
-      rawText: '',
-    };
-  }, [project]);
-
-  const sections: PageSection[] = useMemo(() => {
-    return project?.sections || [];
+  const sections = useMemo(() => {
+    const s = project?.sections;
+    if (Array.isArray(s)) {
+      return (s as any[]).map((sec) => ({
+        id: sec.id || String(Math.random()),
+        type: sec.type || 'hero',
+        name: sec.name || sec.type || 'Section',
+        enabled: sec.enabled !== false,
+        order: typeof sec.order === 'number' ? sec.order : 0,
+        content: sec.content || {} as Record<string, any>,
+      }));
+    }
+    return [];
   }, [project]);
 
   const updateContent = (field: string, value: string) => {
     if (!project) return;
-    const newContent = { ...content, [field]: value };
-    updateProject(project.id, { content: newContent });
-    showToast();
+    const currentServices = Array.isArray(project.services) ? project.services : [];
+    let newServices = currentServices;
+
+    if (field === 'services') {
+      try { newServices = JSON.parse(value); } catch { /* keep current */ }
+    }
+
+    updateMutation.mutate({
+      id: project.id,
+      data: field === 'services'
+        ? { services: newServices }
+        : { [field]: value },
+    });
   };
 
-  const updateSections = (newSections: PageSection[]) => {
+  const updateSections = (newSections: any[]) => {
     if (!project) return;
-    updateProject(project.id, { sections: newSections });
-    showToast();
+    updateMutation.mutate({ id: project.id, data: { sections: newSections } });
   };
 
   const toggleSection = (sectionId: string) => {
@@ -78,19 +106,20 @@ export default function EditorPage() {
     updateSections(newSections);
   };
 
-  const showToast = () => {
-    setShowSavedToast(true);
-    setTimeout(() => setShowSavedToast(false), 1500);
-  };
+  if (isLoading) {
+    return (
+      <div className="h-screen flex items-center justify-center" style={{ background: '#000' }}>
+        <Loader2 className="w-10 h-10 text-violet-400 animate-spin" />
+      </div>
+    );
+  }
 
   if (!project) {
     return (
       <div className="h-screen flex items-center justify-center" style={{ background: '#000' }}>
         <div className="text-center">
           <p className="text-white/40 mb-4">Project not found</p>
-          <button onClick={() => navigate('/dashboard')} className="text-violet-400 hover:text-violet-300 text-sm">
-            Back to Dashboard
-          </button>
+          <button onClick={() => navigate('/dashboard')} className="text-violet-400 hover:text-violet-300 text-sm">Back to Dashboard</button>
         </div>
       </div>
     );
@@ -98,7 +127,7 @@ export default function EditorPage() {
 
   return (
     <div className="h-screen flex flex-col" style={{ background: '#000000' }}>
-      {/* Top Toolbar */}
+      {/* Toolbar */}
       <div className="flex items-center justify-between h-14 px-4 border-b border-white/5" style={{ background: '#111111' }}>
         <div className="flex items-center gap-3">
           <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-2 rounded-lg text-white/40 hover:text-white hover:bg-white/5 transition-all">
@@ -127,11 +156,8 @@ export default function EditorPage() {
               <Save className="w-3 h-3" /> Saved
             </div>
           )}
-          <button onClick={() => navigate('/dashboard')} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white/40 hover:text-white transition-all">
-            Done
-          </button>
-          <button onClick={() => window.open(`#/preview/${project.id}`, '_blank')}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white transition-all hover:shadow-lg"
+          <button onClick={() => navigate('/dashboard')} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white/40 hover:text-white transition-all">Done</button>
+          <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white transition-all hover:shadow-lg"
             style={{ background: 'linear-gradient(135deg, #6b46c1 0%, #2563eb 100%)' }}>
             <Eye className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Preview</span>
